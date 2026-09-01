@@ -1,25 +1,48 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import User from '../models/user.model';
-// import { Usuario } from '../models'; // Modelo hipotético de usuarios
 
 export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  // Lógica para buscar el usuario y validar la contraseña (ej. con bcrypt)
-   const user = await User.findOne({ where: { email } });
-  // si falla la validación -> return res.status(401)...
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Debe proporcionar email y contraseña.' });
+    }
 
-  // Definir los datos a encriptar en el token
-  const payload = {
-    id: user?.id, // Reemplazar con user.id
-    rol: user?.role // Reemplazar con user.rol
-  };
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales inválidas.' });
+    }
 
-  const secretKey = process.env.JWT_SECRET || 'alex123';
-  
-  // Generar token con expiración de 8 horas
-  const token = jwt.sign(payload, secretKey, { expiresIn: '8h' });
+    const passwordValida = await bcrypt.compare(password, user.get('password') as string);
+    if (!passwordValida) {
+      return res.status(401).json({ error: 'Credenciales inválidas.' });
+    }
 
-  return res.json({ token });
+    if (user.get('status') === false) {
+      return res.status(403).json({ error: 'El usuario se encuentra inactivo.' });
+    }
+
+    const payload = {
+      id: user.get('id'),
+      rol: user.get('role')
+    };
+
+    const secretKey = process.env.JWT_SECRET || 'alex123';
+    const token = jwt.sign(payload, secretKey, { expiresIn: '8h' });
+
+    return res.json({
+      token,
+      usuario: {
+        id: user.get('id'),
+        name: user.get('name'),
+        email: user.get('email'),
+        role: user.get('role')
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Error al iniciar sesión.' });
+  }
 };

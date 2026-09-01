@@ -1,0 +1,602 @@
+openapi: 3.0.3
+info:
+  title: Centurion API
+  description: >
+    API REST para la gestión de solicitudes de medicamentos entre clínicas y
+    almacenes. Incluye administración de usuarios, clínicas, almacenes,
+    medicamentos e importación masiva de medicamentos vía JSON.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Servidor local
+
+tags:
+  - name: Auth
+  - name: Usuarios
+  - name: Clínicas
+  - name: Almacenes
+  - name: Medicamentos
+  - name: Solicitudes
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      description: Valida las credenciales y devuelve un token JWT (expira en 8h).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  usuario:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      name: { type: string }
+                      email: { type: string }
+                      role: { type: string, enum: ["admin", "gestor de solicitudes"] }
+        "400":
+          description: Faltan email o password
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Usuario inactivo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/users:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios
+      security: []
+      responses:
+        "200":
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Usuario" }
+    post:
+      tags: [Usuarios]
+      summary: Crear usuario
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UsuarioInput" }
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Usuario" }
+        "400":
+          description: El email ya se encuentra registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/users/{id}:
+    get:
+      tags: [Usuarios]
+      summary: Obtener usuario por ID
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UsuarioId"
+      responses:
+        "200":
+          description: Usuario encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: "#/components/schemas/Usuario" }
+        "404":
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      tags: [Usuarios]
+      summary: Actualizar usuario
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UsuarioId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UsuarioInput" }
+      responses:
+        "200":
+          description: Usuario actualizado
+        "404":
+          description: Usuario no encontrado
+    delete:
+      tags: [Usuarios]
+      summary: Eliminar usuario
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UsuarioId"
+      responses:
+        "200":
+          description: Usuario eliminado
+        "404":
+          description: Usuario no encontrado
+
+  /api/clinica/clinicas:
+    post:
+      tags: [Clínicas]
+      summary: Crear clínica
+      description: Requiere rol `admin`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClinicaInput" }
+      responses:
+        "201":
+          description: Clínica creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Clinica" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    get:
+      tags: [Clínicas]
+      summary: Listar clínicas
+      description: Requiere rol `admin`.
+      responses:
+        "200":
+          description: Lista de clínicas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Clinica" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /api/clinica/clinicas/{id}:
+    put:
+      tags: [Clínicas]
+      summary: Actualizar clínica
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClinicaInput" }
+      responses:
+        "200": { description: Clínica actualizada correctamente }
+        "404": { description: Clínica no encontrada }
+    delete:
+      tags: [Clínicas]
+      summary: Eliminar clínica
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Clínica eliminada correctamente }
+        "404": { description: Clínica no encontrada }
+
+  /api/clinica/clinicas/{clinica_id}/solicitudes:
+    get:
+      tags: [Clínicas, Solicitudes]
+      summary: Historial de solicitudes de una clínica
+      parameters:
+        - name: clinica_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Historial de solicitudes con almacén y medicamentos incluidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Solicitud" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+
+  /api/clinica/almacenes:
+    post:
+      tags: [Almacenes]
+      summary: Crear almacén
+      description: Requiere rol `admin`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlmacenInput" }
+      responses:
+        "201":
+          description: Almacén creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Almacen" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    get:
+      tags: [Almacenes]
+      summary: Listar almacenes
+      description: Requiere rol `admin`.
+      responses:
+        "200":
+          description: Lista de almacenes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Almacen" }
+
+  /api/clinica/almacenes/{id}:
+    put:
+      tags: [Almacenes]
+      summary: Actualizar almacén
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlmacenInput" }
+      responses:
+        "200": { description: Almacén actualizado correctamente }
+        "404": { description: Almacén no encontrado }
+    delete:
+      tags: [Almacenes]
+      summary: Eliminar almacén
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Almacén eliminado correctamente }
+        "404": { description: Almacén no encontrado }
+
+  /api/clinica/medicamentos:
+    post:
+      tags: [Medicamentos]
+      summary: Crear medicamento
+      description: Requiere rol `admin`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MedicamentoInput" }
+      responses:
+        "201":
+          description: Medicamento creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Medicamento" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    get:
+      tags: [Medicamentos]
+      summary: Listar medicamentos
+      description: Requiere rol `admin`.
+      responses:
+        "200":
+          description: Lista de medicamentos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Medicamento" }
+
+  /api/clinica/medicamentos/{id}:
+    put:
+      tags: [Medicamentos]
+      summary: Actualizar medicamento
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MedicamentoInput" }
+      responses:
+        "200": { description: Medicamento actualizado correctamente }
+        "404": { description: Medicamento no encontrado }
+    delete:
+      tags: [Medicamentos]
+      summary: Eliminar medicamento
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Medicamento eliminado correctamente }
+        "404": { description: Medicamento no encontrado }
+
+  /api/clinica/medicamentos/importar:
+    post:
+      tags: [Medicamentos]
+      summary: Importar medicamentos desde un archivo JSON
+      description: >
+        Sube un archivo `.json` (campo `archivo`, máx. 5MB) con un arreglo de
+        medicamentos y los inserta masivamente. Requiere rol `admin`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                  description: Archivo JSON con un arreglo de medicamentos
+              required: [archivo]
+      responses:
+        "201":
+          description: Medicamentos importados correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje: { type: string }
+                  medicamentos:
+                    type: array
+                    items: { $ref: "#/components/schemas/Medicamento" }
+        "400":
+          description: Archivo inválido, faltante, mal formado o demasiado grande
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /api/clinica/solicitudes/activas:
+    get:
+      tags: [Solicitudes]
+      summary: Listar solicitudes activas
+      description: Excluye solicitudes en estado `Entregada` o `Cancelada`.
+      responses:
+        "200":
+          description: Lista de solicitudes activas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Solicitud" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+
+  /api/clinica/solicitudes:
+    post:
+      tags: [Solicitudes]
+      summary: Crear una solicitud
+      description: >
+        Disponible para cualquier usuario autenticado (rol gestor de
+        solicitudes) o para un administrador. Crea la cabecera de la
+        solicitud y sus detalles (medicamentos y cantidades) en una sola
+        transacción.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SolicitudInput" }
+      responses:
+        "201":
+          description: Solicitud creada con éxito
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje: { type: string }
+                  solicitud: { $ref: "#/components/schemas/Solicitud" }
+        "401": { $ref: "#/components/responses/NoAutorizado" }
+
+  /api/clinica/solicitudes/{id}:
+    put:
+      tags: [Solicitudes]
+      summary: Actualizar el estado de una solicitud
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                estado:
+                  type: string
+                  enum: [Pendiente, Asignada, "En Camino", Entregada, Cancelada]
+      responses:
+        "200": { description: Solicitud actualizada al nuevo estado }
+        "404": { description: Solicitud no encontrada }
+    delete:
+      tags: [Solicitudes]
+      summary: Eliminar una solicitud
+      description: Requiere rol `admin`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Solicitud eliminada }
+        "404": { description: Solicitud no encontrada }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Token JWT obtenido al iniciar sesión. Enviar como
+        `Authorization: Bearer <token>`.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    UsuarioId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    NoAutorizado:
+      description: Token no proporcionado o inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Prohibido:
+      description: El usuario no tiene rol de administrador
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+
+    Usuario:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        lastname: { type: string }
+        email: { type: string, format: email }
+        birthday: { type: string, format: date }
+        phone: { type: string }
+        status: { type: boolean }
+        role: { type: string, enum: ["admin", "gestor de solicitudes"] }
+        dni_id: { type: string, format: uuid }
+        address_user_id: { type: string }
+
+    UsuarioInput:
+      type: object
+      required: [name, lastname, email, password, birthday, phone, role, dni_id]
+      properties:
+        name: { type: string }
+        lastname: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        birthday: { type: string, format: date }
+        phone: { type: string }
+        status: { type: boolean }
+        role: { type: string, enum: ["admin", "gestor de solicitudes"] }
+        dni_id: { type: string, format: uuid }
+        address_user_id: { type: string }
+
+    Clinica:
+      type: object
+      properties:
+        nit: { type: string }
+        name: { type: string }
+
+    ClinicaInput:
+      type: object
+      required: [nit, name]
+      properties:
+        nit: { type: string }
+        name: { type: string }
+
+    Almacen:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        ubicacion: { type: string }
+
+    AlmacenInput:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string }
+        ubicacion: { type: string }
+
+    Medicamento:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        descripcion: { type: string }
+
+    MedicamentoInput:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string }
+        descripcion: { type: string }
+
+    Solicitud:
+      type: object
+      properties:
+        id: { type: integer }
+        clinica_id: { type: string }
+        almacen_id: { type: integer }
+        estado:
+          type: string
+          enum: [Pendiente, Asignada, "En Camino", Entregada, Cancelada]
+        fecha: { type: string, format: date-time }
+
+    SolicitudInput:
+      type: object
+      required: [clinica_id, almacen_id, medicamentos]
+      properties:
+        clinica_id: { type: string }
+        almacen_id: { type: integer }
+        estado_inicial:
+          type: string
+          enum: [Pendiente, Asignada, "En Camino", Entregada, Cancelada]
+          default: Pendiente
+        medicamentos:
+          type: array
+          items:
+            type: object
+            properties:
+              medicamento_id: { type: integer }
+              cantidad: { type: integer }
